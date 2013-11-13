@@ -1,0 +1,193 @@
+{
+  "AWSTemplateFormatVersion":"2010-09-09",
+  "Description":"AWS Gameday 2013 - Part 2 - Template by Team AWeSOME Waffles",
+  "Parameters":{
+    "KeyName":{
+      "Description":"The EC2 Key Pair to allow SSH access to the instances",
+      "Type":"String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[-_ a-zA-Z0-9]*",
+      "ConstraintDescription" : "can contain only alphanumeric characters, spaces, dashes and underscores."
+    }
+  },
+  
+  "Resources" : {
+    "BatchProcessing":{
+      "Type":"AWS::IAM::Role",
+      "Properties":{
+        "AssumeRolePolicyDocument":{
+          "Statement":[
+            {
+              "Effect":"Allow",
+              "Principal":{
+                "Service":[
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action":[
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path":"/",
+        "Policies":[
+          {
+            "PolicyName":"BatchProcessingPolicy",
+            "PolicyDocument":{
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:*",
+                    "sqs:*"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "GdInstanceProfile":{
+      "Type":"AWS::IAM::InstanceProfile",
+      "Properties":{
+        "Path":"/",
+        "Roles":[
+          {
+            "Ref":"BatchProcessing"
+          }
+        ]
+      }
+    },
+    
+    "GdASG":{
+      "Type":"AWS::AutoScaling::AutoScalingGroup",
+      "Properties":{
+        "AvailabilityZones":["us-east-1a","us-east-1b"],
+        "LaunchConfigurationName":{
+          "Ref":"GdLaunchConfig"
+        },
+        "MinSize":1,
+        "MaxSize":5,
+        "Cooldown":"120",
+        "Tags":[
+          {
+            "Key":"Name",
+            "Value":"Processor",
+            "PropagateAtLaunch":"true"
+          },
+          {
+            "Key":"Department",
+            "Value":"7500",
+            "PropagateAtLaunch":"true"
+          },
+          {
+            "Key":"Application",
+            "Value":"image-processor",
+            "PropagateAtLaunch":"true"
+          }
+        ]
+      }
+    },
+    
+    "GdLaunchConfig":{
+      "Type":"AWS::AutoScaling::LaunchConfiguration",
+      "Properties":{
+        "KeyName":{
+          "Ref":"KeyName"
+        },
+        "ImageId":"ami-f14d6898",
+        "SecurityGroups":[
+          {
+            "Ref":"GdSecurityGroup"
+          }
+        ],
+        "InstanceType":"c1.medium",
+        "IamInstanceProfile":{
+          "Ref":"GdInstanceProfile"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "\n",
+              [
+                "#!/bin/bash",
+                "INPUT_QUEUE=AwesomeInputQueue",
+                "OUTPUT_QUEUE=AwesomeOutputQueue",
+                "S3_BUCKET=awesome-output",
+                "/usr/bin/python /home/ec2-user/image_processor.py --input-queue $INPUT_QUEUE --output-queue $OUTPUT_QUEUE --s3-output-bucket $S3_BUCKET &",
+                "/usr/bin/python /home/ec2-user/image_processor.py --input-queue $INPUT_QUEUE --output-queue $OUTPUT_QUEUE --s3-output-bucket $S3_BUCKET &"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "ServerScaleUpPolicy":{
+      "Type":"AWS::AutoScaling::ScalingPolicy",
+      "Properties":{
+        "AdjustmentType":"ChangeInCapacity",
+        "AutoScalingGroupName":{
+          "Ref":"GdASG"
+        },
+        "Cooldown":"60",
+        "ScalingAdjustment":"1"
+      }
+    },
+    "ServerScaleDownPolicy":{
+      "Type":"AWS::AutoScaling::ScalingPolicy",
+      "Properties":{
+        "AdjustmentType":"ChangeInCapacity",
+        "AutoScalingGroupName":{
+          "Ref":"GdASG"
+        },
+        "Cooldown":"60",
+        "ScalingAdjustment":"-1"
+      }
+    },
+    "CPUAlarmHigh":{
+      "Type":"AWS::CloudWatch::Alarm",
+      "Properties":{
+        "AlarmDescription":"Scale-up if CPU > 90% for 5 minutes",
+        "MetricName":"CPUUtilization",
+        "Namespace":"AWS/EC2",
+        "Statistic":"Average",
+        "Period":"300",
+        "EvaluationPeriods":"1",
+        "Threshold":"90",
+        "AlarmActions":[
+          {
+            "Ref":"ServerScaleUpPolicy"
+          }
+        ],
+        "Dimensions":[
+          {
+            "Name":"AutoScalingGroupName",
+            "Value":{
+              "Ref":"GdASG"
+            }
+          }
+        ],
+        "ComparisonOperator":"GreaterThanThreshold"
+      }
+    },
+    
+    "GdSecurityGroup":{
+      "Type":"AWS::EC2::SecurityGroup",
+      "Properties":{
+        "GroupDescription":"Access to Instance",
+        "SecurityGroupIngress":[
+          {
+            "IpProtocol":"tcp",
+            "FromPort":"22",
+            "ToPort":"22",
+            "CidrIp":"0.0.0.0/0"
+          }
+        ]
+      }
+    }
+  }
+}

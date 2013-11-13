@@ -1,0 +1,89 @@
+{
+  "AWSTemplateFormatVersion":"2010-09-09",
+  "Description":"AWS Gameday 2013 001 - Template by Team AWeSOME Waffles",
+  "Parameters":{
+    "KeyName":{
+      "Description":"The EC2 Key Pair to allow SSH access to the instances",
+      "Type":"String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[-_ a-zA-Z0-9]*",
+      "ConstraintDescription" : "can contain only alphanumeric characters, spaces, dashes and underscores."
+    }
+  },
+  
+  "Resources" : {
+    "GdASG":{
+      "Type":"AWS::AutoScaling::AutoScalingGroup",
+      "Properties":{
+        "AvailabilityZones":{
+          "Fn::GetAZs":""
+        },
+        "LaunchConfigurationName":{
+          "Ref":"GdLaunchConfig"
+        },
+        "MinSize":1,
+        "MaxSize":10,
+        "Cooldown":"120",
+        "Tags":[
+          {
+            "Key":"Name",
+            "Value":"Instance",
+            "PropagateAtLaunch":"true"
+          }
+        ]
+      }
+    },
+    
+    "GdLaunchConfig":{
+      "Type":"AWS::AutoScaling::LaunchConfiguration",
+      "Properties":{
+        "KeyName":{
+          "Ref":"KeyName"
+        },
+        "ImageId":"ami-35792c5c",
+        "SecurityGroups":[
+          {
+            "Ref":"GdSecurityGroup"
+          }
+        ],
+        "InstanceType":"t1.micro",
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "\n",
+              [
+                "#!/bin/bash",
+                "yum install -y ImageMagick",
+                "easy_install argparse",
+                "mkdir /home/ec2-user/jobs",
+                "wget -O /home/ec2-user/image_processor.py https://awsu-arch.s3.amazonaws.com/aux/technical-exercises/day-2/lab_1_create_batch_processing_cluster/image_processor.py"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    
+    "GdSecurityGroup":{
+      "Type":"AWS::EC2::SecurityGroup",
+      "Properties":{
+        "GroupDescription":"Access to Game Day instance",
+        "SecurityGroupIngress":[
+          {
+            "IpProtocol":"tcp",
+            "FromPort":"22",
+            "ToPort":"22",
+            "CidrIp":"0.0.0.0/0"
+          },
+          {
+            "IpProtocol":"tcp",
+            "FromPort":"80",
+            "ToPort":"80",
+            "CidrIp":"0.0.0.0/0"
+          }
+        ]
+      }
+    }
+  }
+}
